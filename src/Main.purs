@@ -10,10 +10,11 @@ import Control.Monad.Rec.Class (Step(..), tailRec)
 import Data.Bifunctor (class Bifunctor, bimap)
 import Data.Either (Either)
 import Data.Either as E
+import Data.Foldable (foldr)
 import Data.Functor.Clown (Clown(..))
 import Data.Functor.Joker (Joker(..))
 import Data.Functor.Mu (Mu(..))
-import Data.List (List(..), (:))
+import Data.List (List(..), (:), reverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (logShow)
@@ -221,5 +222,21 @@ sum = tcata'' go
   go (Left (Pair (Const l) (Id r))) = l + r
   go (Right (Const _)) = 0
 
+tana :: forall p p' v. Dissect p p' => (v -> p v) -> v -> Mu p
+tana coalgebra = go mempty
+  where
+  go stack seed = do
+    let head = coalgebra seed
+    case right (E.Left head) of
+      E.Left (Tuple tail _) -> go (head : stack) tail
+      E.Right end -> In (foldr (\a b -> map (const (In b)) a) end (reverse stack))
+
+mkList :: Int -> List' Int
+mkList = tana go
+  where
+  go :: Int -> (Const Int :*: Id :+: One) Int
+  go 0 = Right (Const unit)
+  go n = Left (Pair (Const n) (Id (n - 1)))
+
 main ∷ Effect Unit
-main = logShow (sum xs)
+main = logShow (sum (mkList 10000))

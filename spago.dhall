@@ -5,6 +5,7 @@
   , "effect"
   , "either"
   , "fixed-points"
+  , "foldable-traversable"
   , "functors"
   , "lists"
   , "partial"
