@@ -18,6 +18,7 @@ import Data.List (List(..), (:), reverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (logShow)
+import Unsafe.Coerce (unsafeCoerce)
 import Partial.Unsafe (unsafeCrashWith)
 
 -- Polyomial Functor Kit
@@ -201,42 +202,76 @@ infixl 4 type Pairing as :*:
 
 type List' a = Mu (Const a :*: Id :+: One)
 
-nil :: forall a. List' a
+nil ∷ ∀ a. List' a
 nil = In (Right (Const unit))
 
-cons :: forall a. a -> List' a -> List' a
+cons ∷ ∀ a. a → List' a → List' a
 cons a (In l) = In (Left (Pair (Const a) (Id (In l))))
 
-fromZeroTo :: Int -> List' Int
+fromZeroTo ∷ Int → List' Int
 fromZeroTo n = go nil 0 (n + 1)
   where
   go v _ 0 = v
   go v a b = go (cons a v) (a + 1) (b - 1)
 
-xs :: List' Int
+xs ∷ List' Int
 xs = fromZeroTo 1_000_000
 
-sum :: List' Int -> Int
+sum ∷ List' Int → Int
 sum = tcata'' go
   where
   go (Left (Pair (Const l) (Id r))) = l + r
   go (Right (Const _)) = 0
 
-tana :: forall p p' v. Dissect p p' => (v -> p v) -> v -> Mu p
-tana coalgebra = go mempty
+tana ∷ ∀ p p' v. Dissect p p' ⇒ (v → p v) → v → Mu p
+tana coalgebra seed_ = go (right (E.Left (coalgebra seed_))) mempty
   where
-  go stack seed = do
-    let head = coalgebra seed
-    case right (E.Left head) of
-      E.Left (Tuple tail _) -> go (head : stack) tail
-      E.Right end -> In (foldr (\a b -> map (const (In b)) a) end (reverse stack))
+  go index stack =
+    case index of
+      E.Left (Tuple pt pd) →
+        go (right (E.Left (coalgebra pt))) (pd : stack)
+      E.Right pv →
+        case stack of
+          (pd : stk) →
+            go (right (E.Right (Tuple pd (In pv)))) stk
+          Nil →
+            In pv
 
-mkList :: Int -> List' Int
+thylo :: forall p p' v w. Dissect p p' => (p v -> v) -> (w -> p w) -> w -> v
+thylo algebra coalgebra seed_ = go (right (E.Left (coalgebra seed_))) mempty
+  where
+  go index stack =
+    case index of
+      E.Left (Tuple pt pd) ->
+        go (right (E.Left (coalgebra pt))) (pd : stack)
+      E.Right pv ->
+        case stack of
+          (pd : stk) ->
+            go (right (E.Right (Tuple pd (algebra pv)))) stk
+          Nil ->
+            algebra pv
+
+mkList ∷ Int → List' Int
 mkList = tana go
   where
-  go :: Int -> (Const Int :*: Id :+: One) Int
+  go ∷ Int → (Const Int :*: Id :+: One) Int
   go 0 = Right (Const unit)
   go n = Left (Pair (Const n) (Id (n - 1)))
 
+mkTree :: Int -> Mu (Choice (Const Int) (Pairing Id Id))
+mkTree = tana go
+  where
+  go 0 = Left (Const 0)
+  go 1 = Left (Const 1)
+  go n = Right (Pair (Id (n - 2)) (Id (n - 1)))
+
+factorial = thylo algebra coalgebra
+  where
+  algebra (Right (Const _)) = 1
+  algebra (Left (Pair (Const n) (Id m))) = n * m
+
+  coalgebra 1 = (Right (Const unit))
+  coalgebra n = (Left (Pair (Const n) (Id (n - 1))))
+
 main ∷ Effect Unit
-main = logShow (sum (mkList 10000))
+main = logShow unit -- (sum (mkList 10000))
